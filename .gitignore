@@ -1,0 +1,13 @@
+.env
+config/projects.json
+.venv/
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+data/*.sqlite
+data/*.sqlite-*
+data/attachments/
+logs/*.log
+logs/*.out
+logs/*.err

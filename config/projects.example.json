@@ -1,0 +1,16 @@
+{
+  "projects": [
+    {
+      "id": "example_project",
+      "title": "Example Project",
+      "cwd": "/absolute/path/to/your/project",
+      "enabled": true
+    },
+    {
+      "id": "another_project",
+      "title": "Another Project",
+      "cwd": "/absolute/path/to/another/project",
+      "enabled": false
+    }
+  ]
+}
