@@ -144,13 +144,13 @@ class CodexSessionMonitor:
             if not session_id:
                 continue
 
+            if int(chat.get("notifications_enabled") or 0) == 1:
+                continue
+
             completion = completions.get(session_id)
             last_key = str(chat.get("last_completion_key") or "") or None
             if last_key is None and completion is not None:
                 last_key = completion.completion_key
-
-            if int(chat.get("notifications_enabled") or 0) == 1 and chat.get("last_completion_key"):
-                continue
 
             self.db.set_session_notifications(
                 str(chat["telegram_user_id"]),
