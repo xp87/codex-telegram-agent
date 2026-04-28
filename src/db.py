@@ -266,6 +266,24 @@ class AgentDb:
             ).fetchall()
             return [_row_to_dict(row) for row in rows]
 
+    def list_session_chats(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT
+                  c.*,
+                  n.last_completion_key AS last_completion_key,
+                  n.enabled AS notifications_enabled
+                FROM chats c
+                LEFT JOIN codex_session_notifications n
+                  ON n.telegram_user_id = c.telegram_user_id
+                 AND n.codex_session_id = c.codex_session_id
+                WHERE c.codex_session_id IS NOT NULL
+                ORDER BY c.updated_at DESC, c.id DESC
+                """
+            ).fetchall()
+            return [_row_to_dict(row) for row in rows]
+
     def list_hidden_session_ids(self, telegram_user_id: str) -> set[str]:
         with self._lock:
             rows = self._conn.execute(

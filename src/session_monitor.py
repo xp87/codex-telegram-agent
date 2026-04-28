@@ -53,7 +53,6 @@ class CodexSessionMonitor:
         logger.info("Codex session monitor started")
         try:
             self._sync_sessions()
-            self._mark_missing_watches_seen()
 
             while not self._stop_event.is_set():
                 try:
@@ -123,6 +122,7 @@ class CodexSessionMonitor:
         projects, _ = sync_codex_sessions(self.db, self.telegram_user_ids, self.configured_projects)
         self.projects_by_id = {project.id: project for project in projects}
         self._last_sync_monotonic = asyncio.get_running_loop().time()
+        self._ensure_all_session_notifications()
 
     def _sync_sessions_if_needed(self) -> None:
         if asyncio.get_running_loop().time() - self._last_sync_monotonic < 60:
@@ -135,22 +135,33 @@ class CodexSessionMonitor:
             return project.title
         return "Неизвестный проект"
 
-    def _mark_missing_watches_seen(self) -> None:
+    def _ensure_all_session_notifications(self) -> None:
         completions = latest_completions_by_session_id()
-        for chat in self.db.list_watched_session_chats():
-            if chat.get("last_completion_key"):
-                continue
+        enabled_count = 0
 
+        for chat in self.db.list_session_chats():
             session_id = str(chat.get("codex_session_id") or "")
-            completion = completions.get(session_id)
-            if completion is None:
+            if not session_id:
                 continue
 
-            self.db.set_session_notification_key(
+            completion = completions.get(session_id)
+            last_key = str(chat.get("last_completion_key") or "") or None
+            if last_key is None and completion is not None:
+                last_key = completion.completion_key
+
+            if int(chat.get("notifications_enabled") or 0) == 1 and chat.get("last_completion_key"):
+                continue
+
+            self.db.set_session_notifications(
                 str(chat["telegram_user_id"]),
                 session_id,
-                completion.completion_key,
+                enabled=True,
+                last_completion_key=last_key,
             )
+            enabled_count += 1
+
+        if enabled_count:
+            logger.info("Auto-enabled Codex session notifications: count=%s", enabled_count)
 
 
 def enable_notifications_for_session(db: AgentDb, telegram_user_id: str, codex_session_id: str) -> None:
