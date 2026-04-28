@@ -5,6 +5,7 @@ import logging
 from contextlib import suppress
 
 from telegram import Bot
+from telegram.error import NetworkError, RetryAfter, TelegramError, TimedOut
 
 from .codex_desktop import refresh_codex_desktop_thread, run_codex_desktop_prompt
 from .config import Project
@@ -37,7 +38,10 @@ class QueueWorker:
                         await asyncio.wait_for(self._stop_event.wait(), timeout=self.poll_interval)
                     continue
 
-                await self._process_job(job)
+                try:
+                    await self._process_job(job)
+                except Exception:
+                    logger.exception("Queue worker failed while processing job: id=%s", job.get("id"))
         finally:
             logger.info("Queue worker stopped")
 
@@ -127,4 +131,28 @@ class QueueWorker:
 
     async def _send_message(self, telegram_user_id: str, text: str) -> None:
         for chunk in split_telegram_text(text):
-            await self.bot.send_message(chat_id=telegram_user_id, text=chunk)
+            await self._send_chunk_with_retry(telegram_user_id, chunk)
+
+    async def _send_chunk_with_retry(self, telegram_user_id: str, text: str) -> None:
+        for attempt in range(1, 4):
+            try:
+                message = await self.bot.send_message(chat_id=telegram_user_id, text=text)
+                logger.info("Telegram message sent: user_id=%s message_id=%s", telegram_user_id, message.message_id)
+                return
+            except RetryAfter as exc:
+                delay = int(getattr(exc, "retry_after", 1)) + 1
+                logger.warning("Telegram rate limit: user_id=%s attempt=%s delay=%s", telegram_user_id, attempt, delay)
+                await asyncio.sleep(delay)
+            except (NetworkError, TimedOut) as exc:
+                logger.warning(
+                    "Telegram transient send error: user_id=%s attempt=%s error=%s",
+                    telegram_user_id,
+                    attempt,
+                    exc,
+                )
+                await asyncio.sleep(attempt * 2)
+            except TelegramError:
+                logger.exception("Telegram send failed permanently: user_id=%s", telegram_user_id)
+                raise
+
+        raise NetworkError("Telegram send failed after 3 attempts")
